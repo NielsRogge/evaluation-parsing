@@ -1,6 +1,8 @@
 # Evaluation parsing
 
-This repository contains scripts which can be used to extract evaluation results from Hugging Face models, and automatically open a pull request on the respective repository. It leverages the [Claude Agents SDK](https://platform.claude.com/docs/en/agent-sdk/overview).
+This repository contains scripts which can be used to extract evaluation results from Hugging Face models, and automatically open a pull request on the respective repository. This is for the new [Evaluation Results](https://huggingface.co/docs/hub/eval-results) feature released on the hub.
+
+It leverages the [Claude Agents SDK](https://platform.claude.com/docs/en/agent-sdk/overview).
 
 ## Installation
 
