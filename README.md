@@ -21,6 +21,6 @@ HF_TOKEN=...
 Next, you can let Claude parse the model card of a given repository and potentially open a pull request like so:
 
 ```bash
-uv run --env-file keys.env main.py --repo_id zai-org/GLM-4.7
+uv run --env-file keys.env main.py --repo_id zai-org/GLM-4.7 --open_pr
 ```
 
