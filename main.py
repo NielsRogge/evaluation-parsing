@@ -26,7 +26,7 @@ from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock, T
 # Output directory for evaluation results
 OUTPUTS_DIR = Path(__file__).parent / "outputs"
 
-from utils.hf_utils import fetch_huggingface_readme, create_eval_results_pr
+from utils.hf_utils import fetch_huggingface_readme, fetch_benchmarks_with_tasks, create_eval_results_pr
 
 
 async def read_prompt(filename: str) -> str:
@@ -36,13 +36,36 @@ async def read_prompt(filename: str) -> str:
         return await f.read()
 
 
-async def format_user_prompt(repo_id: str) -> str:
-    """Format the user prompt with the model card content."""
+def format_benchmarks_list(benchmarks: list[dict]) -> str:
+    """Format benchmarks as a markdown bullet list with task IDs."""
+    lines = []
+    for b in benchmarks:
+        task_ids = b.get("task_ids", [])
+        if task_ids:
+            tasks_str = ", ".join(f"`{tid}`" for tid in task_ids)
+            lines.append(f"- `{b['id']}` (task_ids: {tasks_str})")
+        else:
+            lines.append(f"- `{b['id']}`")
+    return "\n".join(lines)
+
+
+async def format_system_prompt(benchmarks: list[dict]) -> str:
+    """Format the system prompt template with the live benchmark list."""
+    template = await read_prompt("prompts/system_prompt.md")
+    return template.replace("{supported_benchmarks}", format_benchmarks_list(benchmarks))
+
+
+async def format_user_prompt(repo_id: str, benchmarks: list[dict]) -> str:
+    """Format the user prompt with the model card content and live benchmark list."""
     model_card_content = await fetch_huggingface_readme(repo_id, repo_type="model")
     if model_card_content is None:
         raise ValueError(f"Model card content not found for repo_id: {repo_id}")
     user_prompt_template = await read_prompt("prompts/user_prompt.md")
-    return user_prompt_template.format(repo_id=repo_id, model_card_content=model_card_content)
+    return user_prompt_template.format(
+        repo_id=repo_id,
+        model_card_content=model_card_content,
+        supported_benchmarks=format_benchmarks_list(benchmarks),
+    )
 
 
 schema = {
@@ -64,10 +87,10 @@ schema = {
                             },
                             "task_id": {
                                 "type": "string",
-                                "description": "Optional. Task ID in case there are multiple tasks or leaderboards for this dataset (e.g., 'default', 'diamond' for GPQA)"
+                                "description": "Required. Task ID matching the benchmark's eval.yaml (e.g., 'diamond' for GPQA, 'mmlu_pro' for MMLU-Pro). Use one of the task_ids listed alongside each benchmark."
                             }
                         },
-                        "required": ["id"]
+                        "required": ["id", "task_id"]
                     },
                     "value": {
                         "type": "number",
@@ -176,12 +199,15 @@ async def open_pull_request(repo_id: str, evaluation_results: dict | None) -> st
 async def main(repo_id: str, open_pr: bool = False):
     """Main function to extract evaluation results from model cards."""
 
-    # Format the user prompt
-    user_prompt = await format_user_prompt(repo_id=repo_id)
+    benchmarks = await fetch_benchmarks_with_tasks()
+    print(f"Fetched {len(benchmarks)} official benchmarks")
+
+    system_prompt = await format_system_prompt(benchmarks)
+    user_prompt = await format_user_prompt(repo_id=repo_id, benchmarks=benchmarks)
     
     settings_path = Path(__file__).parent / ".claude" / "settings.json"
     options = ClaudeAgentOptions(
-        system_prompt={"type": "preset", "preset": "claude_code"},
+        system_prompt=system_prompt,
         permission_mode="bypassPermissions",
         settings=str(settings_path),
         setting_sources=["project"],

@@ -15,6 +15,66 @@ from huggingface_hub.errors import HfHubHTTPError
 RepoType = Literal["model", "dataset"]
 
 
+def fetch_official_benchmark_ids() -> list[str]:
+    """Fetch the list of official benchmark dataset IDs from the Hugging Face Hub.
+
+    Uses the Hub API to discover all datasets registered as official benchmarks.
+    See https://huggingface.co/docs/hub/leaderboard-data-guide for details.
+
+    Returns:
+        Sorted list of dataset IDs (e.g. ["Idavidrein/gpqa", "TIGER-Lab/MMLU-Pro", ...]).
+    """
+    api = HfApi()
+    return sorted(ds.id for ds in api.list_datasets(benchmark="official"))
+
+
+async def fetch_benchmark_task_ids(dataset_id: str) -> list[str]:
+    """Fetch task IDs from a benchmark dataset's eval.yaml file.
+
+    Returns an empty list if the file can't be accessed (e.g. gated datasets).
+    """
+    try:
+        filepath = await asyncio.to_thread(
+            hf_hub_download,
+            repo_id=dataset_id,
+            filename="eval.yaml",
+            repo_type="dataset",
+        )
+
+        def read_yaml():
+            with open(filepath, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f)
+
+        content = await asyncio.to_thread(read_yaml)
+        if isinstance(content, dict) and "tasks" in content:
+            tasks = content["tasks"]
+            if isinstance(tasks, list):
+                return [t["id"] for t in tasks if isinstance(t, dict) and "id" in t]
+    except Exception:
+        pass
+    return []
+
+
+async def fetch_benchmarks_with_tasks(max_concurrent: int = 10) -> list[dict]:
+    """Fetch official benchmarks along with their task IDs from eval.yaml files.
+
+    Returns:
+        Sorted list of dicts:
+        [{"id": "Idavidrein/gpqa", "task_ids": ["diamond", "main", "extended"]}, ...]
+    """
+    benchmark_ids = await asyncio.to_thread(fetch_official_benchmark_ids)
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def get_tasks(bid: str) -> dict:
+        async with semaphore:
+            task_ids = await fetch_benchmark_task_ids(bid)
+            return {"id": bid, "task_ids": task_ids}
+
+    results = await asyncio.gather(*[get_tasks(bid) for bid in benchmark_ids])
+    return sorted(results, key=lambda b: b["id"])
+
+
 async def get_existing_eval_results(
     repo_id: str, repo_type: RepoType = "model"
 ) -> dict[str, dict]:
@@ -292,8 +352,8 @@ async def create_eval_results_pr(
         title = f"Add community evaluation results for {benchmarks_str}"
         description = (
             f"This PR adds community-provided evaluation results for the following benchmarks:\n\n"
-            f"- {chr(10).join(f'**[{name}](https://huggingface.co/datasets/{id})**' for name, id in zip(benchmark_names, benchmark_ids))}\n\n"
-            f"These results were extracted from the model card. This is based on the new [evaluation results feature](https://huggingface.co/docs/hub/eval-results)."
+            f"{chr(10).join(f'- **[{name}](https://huggingface.co/datasets/{id})**' for name, id in zip(benchmark_names, benchmark_ids))}\n\n"
+            f"These results were extracted from the model card. This is based on the new [evaluation results feature](https://huggingface.co/docs/hub/eval-results).\n\n"
             f"*Note: This is an automated PR. Please review the evaluation results before merging.*"
         )
 

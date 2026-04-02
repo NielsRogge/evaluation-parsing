@@ -42,7 +42,7 @@ Create a YAML file in `.eval_results/*.yaml` in your model repo:
 ```yaml
 - dataset:
     id: cais/hle                  # Required. Hub dataset ID (must be a Benchmark)
-    task_id: default              # Optional, in case there are multiple tasks or leaderboards for this dataset.
+    task_id: default              # Required. Must match a task ID from the benchmark's eval.yaml
   value: 20.90                    # Required. Metric value
   source:                         # Optional. For now this can only be a Hugging Face model URL
     url: https://huggingface.co/zai-org/GLM-4.7  # Required if source provided
@@ -51,14 +51,9 @@ Create a YAML file in `.eval_results/*.yaml` in your model repo:
 
 ### Supported datasets
 
-Currently, only 4 datasets serve as benchmarks:
+Currently, only the following datasets serve as benchmarks. Each benchmark lists its valid `task_id` values (from its `eval.yaml`). You **must** use one of these `task_id` values when creating evaluation results for that benchmark:
 
-| Benchmark | Hub Dataset ID |
-|-----------|---------------|
-| HLE | [cais/hle](https://huggingface.co/datasets/cais/hle) |
-| GPQA | [Idavidrein/gpqa](https://huggingface.co/datasets/Idavidrein/gpqa) |
-| MMLU-Pro | [TIGER-Lab/MMLU-Pro](https://huggingface.co/datasets/TIGER-Lab/MMLU-Pro) |
-| GSM8K | [openai/gsm8k](https://huggingface.co/datasets/openai/gsm8k) |
+{supported_benchmarks}
 
 Hence it only makes sense to extract evaluation results that reference one of these datasets.
 
@@ -83,7 +78,7 @@ Format your result to match the `.eval_results/*.yaml` structure. The JSON outpu
     {
       "dataset": {
         "id": "Idavidrein/gpqa",   // Required. Hub dataset ID (must be one of the supported benchmarks)
-        "task_id": "diamond"       // Optional. Task ID for datasets with multiple tasks/leaderboards
+        "task_id": "diamond"       // Required. Must be one of the task_ids listed for this benchmark
       },
       "value": 85.7,               // Required. The metric value
       "source": {                  // Required. Source of the evaluation result
@@ -112,3 +107,4 @@ This corresponds to the YAML format stored in `.eval_results/*.yaml`:
 Return an empty list in case you didn't find any evaluation results.
 Only return evaluation results for which you are 100% certain that they accurately represent results presented in the model card, of the specific model on one of the supported benchmarks. The benchmark dataset names need to be explicitly mentioned, do not assume equivalent names.
 In case the model card contains multiple evaluation results on the same benchmark, return the highest score.
+Always include `task_id` — the Hub validates it as a required string field. Use the task_id values listed alongside each benchmark in the supported datasets list above.
