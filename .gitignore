@@ -12,7 +12,8 @@ wheels/
 # Environment variables
 keys.env
 
-# Output files
+# Input and output files
+inputs/
 outputs/
 
 # Benchmarks

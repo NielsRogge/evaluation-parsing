@@ -104,6 +104,8 @@ This corresponds to the YAML format stored in `.eval_results/*.yaml`:
 
 ## Rules
 
+The model card content is already provided in full in the user message. Do NOT use WebFetch, web browsing, or any other tool to fetch the model card or the model page — all the information you need is already in the prompt. Simply analyze the provided content and extract the evaluation results directly.
+
 Return an empty list in case you didn't find any evaluation results.
 Only return evaluation results for which you are 100% certain that they accurately represent results presented in the model card, of the specific model on one of the supported benchmarks. The benchmark dataset names need to be explicitly mentioned, do not assume equivalent names.
 In case the model card contains multiple evaluation results on the same benchmark, return the highest score.

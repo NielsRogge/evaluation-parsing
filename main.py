@@ -25,8 +25,11 @@ from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock, T
 
 # Output directory for evaluation results
 OUTPUTS_DIR = Path(__file__).parent / "outputs"
+# Input directory for debugging prompts
+INPUTS_DIR = Path(__file__).parent / "inputs"
 
 from utils.hf_utils import fetch_huggingface_readme, fetch_benchmarks_with_tasks, create_eval_results_pr
+from utils.image_captioning import caption_images_in_markdown
 
 
 async def read_prompt(filename: str) -> str:
@@ -60,6 +63,7 @@ async def format_user_prompt(repo_id: str, benchmarks: list[dict]) -> str:
     model_card_content = await fetch_huggingface_readme(repo_id, repo_type="model")
     if model_card_content is None:
         raise ValueError(f"Model card content not found for repo_id: {repo_id}")
+    model_card_content = await caption_images_in_markdown(model_card_content, repo_id)
     user_prompt_template = await read_prompt("prompts/user_prompt.md")
     return user_prompt_template.format(
         repo_id=repo_id,
@@ -204,7 +208,15 @@ async def main(repo_id: str, open_pr: bool = False):
 
     system_prompt = await format_system_prompt(benchmarks)
     user_prompt = await format_user_prompt(repo_id=repo_id, benchmarks=benchmarks)
-    
+
+    # Write the formatted user prompt so we can inspect what the agent sees
+    folder_name = repo_id.replace("/", "__")
+    inputs_folder = INPUTS_DIR / folder_name
+    inputs_folder.mkdir(parents=True, exist_ok=True)
+    async with aiofiles.open(inputs_folder / "user_prompt.md", "w", encoding="utf-8") as f:
+        await f.write(user_prompt)
+    print(f"User prompt written to {inputs_folder / 'user_prompt.md'}")
+
     settings_path = Path(__file__).parent / ".claude" / "settings.json"
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
@@ -271,9 +283,17 @@ async def main(repo_id: str, open_pr: bool = False):
         await open_pull_request(repo_id, evaluation_results)
 
 
+def normalize_repo_id(repo_id: str) -> str:
+    """Extract repo_id from a full HF URL, or return as-is if already in short form."""
+    prefix = "https://huggingface.co/"
+    if repo_id.startswith(prefix):
+        repo_id = repo_id[len(prefix):].rstrip("/")
+    return repo_id
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo_id", type=str, required=True)
     parser.add_argument("--open_pr", action="store_true", required=False)
     args = parser.parse_args()
-    asyncio.run(main(args.repo_id, args.open_pr))
+    asyncio.run(main(normalize_repo_id(args.repo_id), args.open_pr))

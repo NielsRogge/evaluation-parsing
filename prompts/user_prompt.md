@@ -8,4 +8,6 @@ Only extract results for these official benchmark dataset IDs:
 
 ## Model card content
 
+The full model card is provided below. Do not use any tools to fetch it — analyze this content directly.
+
 {model_card_content}
