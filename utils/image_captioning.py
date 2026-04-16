@@ -15,7 +15,7 @@ import httpx
 from google import genai
 from google.genai import types
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3-flash-preview"
 
 CAPTION_PROMPT = (
     "Describe this image in detail. If it contains benchmark results, "

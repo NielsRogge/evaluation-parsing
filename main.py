@@ -168,6 +168,35 @@ async def write_output(repo_id: str, evaluation_results: dict):
         print(f"  - {filepath.name}")
 
 
+def load_cached_results(repo_id: str) -> dict | None:
+    """Load previously cached YAML evaluation results from the outputs folder.
+
+    Returns the results in the same shape the agent produces:
+    {"evaluation_results": [...]}, or None if no cached files exist.
+    """
+    folder_name = repo_id.replace("/", "__")
+    output_folder = OUTPUTS_DIR / folder_name
+
+    if not output_folder.is_dir():
+        return None
+
+    yaml_files = sorted(output_folder.glob("*.yaml"))
+    if not yaml_files:
+        return None
+
+    all_results = []
+    for yaml_file in yaml_files:
+        with open(yaml_file, "r", encoding="utf-8") as f:
+            content = yaml.safe_load(f)
+        if isinstance(content, list):
+            all_results.extend(content)
+
+    if not all_results:
+        return None
+
+    return {"evaluation_results": all_results}
+
+
 async def open_pull_request(repo_id: str, evaluation_results: dict | None) -> str | None:
     """Open a pull request with evaluation results to the model repository.
     
@@ -200,85 +229,87 @@ async def open_pull_request(repo_id: str, evaluation_results: dict | None) -> st
         return None
 
 
-async def main(repo_id: str, open_pr: bool = False):
+async def main(repo_id: str, open_pr: bool = False, force: bool = False):
     """Main function to extract evaluation results from model cards."""
 
-    benchmarks = await fetch_benchmarks_with_tasks()
-    print(f"Fetched {len(benchmarks)} official benchmarks")
-
-    system_prompt = await format_system_prompt(benchmarks)
-    user_prompt = await format_user_prompt(repo_id=repo_id, benchmarks=benchmarks)
-
-    # Write the formatted user prompt so we can inspect what the agent sees
-    folder_name = repo_id.replace("/", "__")
-    inputs_folder = INPUTS_DIR / folder_name
-    inputs_folder.mkdir(parents=True, exist_ok=True)
-    async with aiofiles.open(inputs_folder / "user_prompt.md", "w", encoding="utf-8") as f:
-        await f.write(user_prompt)
-    print(f"User prompt written to {inputs_folder / 'user_prompt.md'}")
-
-    settings_path = Path(__file__).parent / ".claude" / "settings.json"
-    options = ClaudeAgentOptions(
-        system_prompt=system_prompt,
-        permission_mode="bypassPermissions",
-        settings=str(settings_path),
-        setting_sources=["project"],
-        output_format={
-            "type": "json_schema",
-            "schema": schema
-        }
-    )
-    
-    message_count = 0
-    subagent_names = {}
     evaluation_results = None
-    try:
-        async for message in query(
-            prompt=user_prompt,
-            options=options,
-        ):
-            message_count += 1
-            if isinstance(message, AssistantMessage):
-                # Determine which agent is making this call
-                if message.parent_tool_use_id is None:
-                    agent_prefix = "[main]"
-                else:
-                    subagent_name = subagent_names.get(
-                        message.parent_tool_use_id, "subagent"
-                    )
-                    agent_prefix = f"[{subagent_name}]"
 
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        print(f"{agent_prefix} Claude: {block.text}")
-                    elif isinstance(block, ToolUseBlock):
-                        print(f"{agent_prefix} Tool: {block.name}({block.input})")
-                        # Track Task tool calls to map subagent names
-                        if block.name == "Task" and isinstance(block.input, dict):
-                            subagent_type = block.input.get("subagent_type", "subagent")
-                            subagent_names[block.id] = subagent_type
-                        # Capture structured output
-                        if block.name == "StructuredOutput" and isinstance(block.input, dict):
-                            evaluation_results = block.input
-            elif (
-                isinstance(message, ResultMessage)
-                and message.total_cost_usd
-                and message.total_cost_usd > 0
+    if open_pr and not force:
+        evaluation_results = load_cached_results(repo_id)
+        if evaluation_results:
+            n = len(evaluation_results["evaluation_results"])
+            print(f"Found {n} cached result(s) in outputs/, skipping agent run. Use --force to re-run.")
+
+    if evaluation_results is None:
+        benchmarks = await fetch_benchmarks_with_tasks()
+        print(f"Fetched {len(benchmarks)} official benchmarks")
+
+        system_prompt = await format_system_prompt(benchmarks)
+        user_prompt = await format_user_prompt(repo_id=repo_id, benchmarks=benchmarks)
+
+        folder_name = repo_id.replace("/", "__")
+        inputs_folder = INPUTS_DIR / folder_name
+        inputs_folder.mkdir(parents=True, exist_ok=True)
+        async with aiofiles.open(inputs_folder / "user_prompt.md", "w", encoding="utf-8") as f:
+            await f.write(user_prompt)
+        print(f"User prompt written to {inputs_folder / 'user_prompt.md'}")
+
+        settings_path = Path(__file__).parent / ".claude" / "settings.json"
+        options = ClaudeAgentOptions(
+            system_prompt=system_prompt,
+            permission_mode="bypassPermissions",
+            settings=str(settings_path),
+            setting_sources=["project"],
+            output_format={
+                "type": "json_schema",
+                "schema": schema
+            }
+        )
+        
+        message_count = 0
+        subagent_names = {}
+        try:
+            async for message in query(
+                prompt=user_prompt,
+                options=options,
             ):
-                print(f"\nCost: ${message.total_cost_usd:.4f}")
-    except Exception as e:
-        print(f"Error during agent query: {type(e).__name__}: {e}")
-        import traceback
+                message_count += 1
+                if isinstance(message, AssistantMessage):
+                    if message.parent_tool_use_id is None:
+                        agent_prefix = "[main]"
+                    else:
+                        subagent_name = subagent_names.get(
+                            message.parent_tool_use_id, "subagent"
+                        )
+                        agent_prefix = f"[{subagent_name}]"
 
-        traceback.print_exc()
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            print(f"{agent_prefix} Claude: {block.text}")
+                        elif isinstance(block, ToolUseBlock):
+                            print(f"{agent_prefix} Tool: {block.name}({block.input})")
+                            if block.name == "Task" and isinstance(block.input, dict):
+                                subagent_type = block.input.get("subagent_type", "subagent")
+                                subagent_names[block.id] = subagent_type
+                            if block.name == "StructuredOutput" and isinstance(block.input, dict):
+                                evaluation_results = block.input
+                elif (
+                    isinstance(message, ResultMessage)
+                    and message.total_cost_usd
+                    and message.total_cost_usd > 0
+                ):
+                    print(f"\nCost: ${message.total_cost_usd:.4f}")
+        except Exception as e:
+            print(f"Error during agent query: {type(e).__name__}: {e}")
+            import traceback
 
-    print(f"\nAgent query completed. Total messages received: {message_count}")
-    
-    # Write results to output file
-    if evaluation_results:
-        await write_output(repo_id, evaluation_results)
+            traceback.print_exc()
 
-    # Open a pull request with the evaluation results
+        print(f"\nAgent query completed. Total messages received: {message_count}")
+        
+        if evaluation_results:
+            await write_output(repo_id, evaluation_results)
+
     if open_pr:
         await open_pull_request(repo_id, evaluation_results)
 
@@ -295,5 +326,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo_id", type=str, required=True)
     parser.add_argument("--open_pr", action="store_true", required=False)
+    parser.add_argument("--force", action="store_true", required=False, help="Force re-run even if cached outputs exist")
     args = parser.parse_args()
-    asyncio.run(main(normalize_repo_id(args.repo_id), args.open_pr))
+    asyncio.run(main(normalize_repo_id(args.repo_id), args.open_pr, args.force))
