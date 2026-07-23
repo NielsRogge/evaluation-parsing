@@ -7,6 +7,22 @@ description: Convert published benchmark leaderboards from Hugging Face datasets
 
 Prepare an auditable local review bundle that shows exactly which model repositories would receive which `.eval_results/*.yaml` changes. Treat the benchmark as the score authority and the Hub repository match as a separate claim requiring evidence.
 
+## Prerequisite: Hugging Face CLI and skill
+
+Check for both the `hf` command and the `hf-cli` agent skill before starting Hub discovery.
+
+1. If the `hf` command is unavailable, install the Hugging Face CLI by following the current [official CLI installation guide](https://huggingface.co/docs/huggingface_hub/en/guides/cli), then verify it with:
+
+   ```bash
+   hf --help
+   ```
+
+2. If the `hf-cli` skill is unavailable to the coding agent, install it using the instructions for the active harness in the [Hugging Face skills repository](https://github.com/huggingface/skills/tree/main). For example, current installations may use `hf skills add` for agents that load `.agents/skills`, `hf skills add --claude` or the Claude Code plugin flow, or a copy/symlink into a Codex `.agents/skills` location.
+
+3. Reload the harness if required, confirm that the `hf-cli` skill is discoverable, and read that skill before continuing.
+
+If the environment does not permit installing the CLI or skill, stop and tell the user what is missing. Do not replace exact Hub discovery with guessed repository URLs.
+
 ## Non-negotiable boundary
 
 - Perform read-only network operations only.
