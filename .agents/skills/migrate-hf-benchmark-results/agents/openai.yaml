@@ -1,0 +1,4 @@
+interface:
+  display_name: "Migrate HF Benchmark Results"
+  short_description: "Draft reviewable Hub benchmark result PRs"
+  default_prompt: "Use $migrate-hf-benchmark-results to turn this benchmark source into a local, human-reviewable set of model eval-result PR drafts."
