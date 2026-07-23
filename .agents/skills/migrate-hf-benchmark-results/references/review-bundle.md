@@ -30,7 +30,7 @@ Use one row per target model:
 | Source model | Hub repo | Match evidence | Inspected SHA | Draft path | Tasks/values | Existing state | Decision |
 |---|---|---|---|---|---|---|---|
 
-Set decision to `draft`, `already_present`, or `needs_review`. Link the source locator and local draft from the surrounding prose when a table cell would become unwieldy.
+Set decision to `draft`, `already_present`, `duplicate_open_pr`, or `needs_review`. For duplicate skips, link the existing `.eval_results` file or open PR and do not create a draft. Link the source locator and local draft from the surrounding prose when a table cell would become unwieldy.
 
 ### 3. Excluded and unresolved models
 
@@ -52,7 +52,8 @@ Include unchecked boxes for a human to verify:
 - [ ] Each Hub repo is the exact evaluated model artifact.
 - [ ] Each task/value matches the cited source locator and published scale.
 - [ ] Each task ID exists in the benchmark's current `eval.yaml`.
-- [ ] Existing model results and open PRs are handled correctly.
+- [ ] Every existing `.eval_results` file and every open PR was searched for the benchmark dataset ID.
+- [ ] No draft targets a repo where that benchmark already appears on the default branch or in an open PR.
 - [ ] Source attribution, dates, revisions, and notes are factual.
 - [ ] Every draft file contains only the intended change.
 - [ ] The approved repository list is explicit before any later submission task.
@@ -75,4 +76,6 @@ Quote CSV fields correctly. Preserve source spelling and precision. Use addition
 - A draft path is repo-relative beneath its model directory.
 - A reviewer must be able to compare any numeric YAML value to one ledger row.
 - A model with several task values may use one YAML file containing several list entries.
+- Any existing entry for the benchmark dataset ID disqualifies the repository from a new draft, even if it covers only one task or has a different value.
+- Any open PR containing the benchmark dataset ID disqualifies the repository until that PR is closed without the result.
 - The bundle is incomplete if only drafted models are reported.
