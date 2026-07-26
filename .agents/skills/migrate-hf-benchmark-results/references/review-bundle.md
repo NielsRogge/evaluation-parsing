@@ -30,7 +30,7 @@ Use one row per target model:
 | Source model | Hub repo | Match evidence | Inspected SHA | Draft path | Tasks/values | Existing state | Decision |
 |---|---|---|---|---|---|---|---|
 
-Set decision to `draft`, `already_present`, or `needs_review`. Link the source locator and local draft from the surrounding prose when a table cell would become unwieldy.
+Set decision to `draft`, `update_existing_pr`, `already_present`, `already_in_own_open_pr`, `duplicate_open_pr`, or `needs_review`. For `update_existing_pr`, link the existing PR, record its author and the authenticated account, and make the local draft the complete intended file based on the PR's latest contents. For skips, link the existing `.eval_results` file or every matching open PR and do not create a draft. Link the source locator and local draft from the surrounding prose when a table cell would become unwieldy.
 
 ### 3. Excluded and unresolved models
 
@@ -52,10 +52,12 @@ Include unchecked boxes for a human to verify:
 - [ ] Each Hub repo is the exact evaluated model artifact.
 - [ ] Each task/value matches the cited source locator and published scale.
 - [ ] Each task ID exists in the benchmark's current `eval.yaml`.
-- [ ] Existing model results and open PRs are handled correctly.
+- [ ] Every existing `.eval_results` file and every open PR was searched for the benchmark dataset ID.
+- [ ] No new-PR draft targets a repo where that benchmark already appears on the default branch or in an open PR.
+- [ ] Every `update_existing_pr` draft targets exactly one writable PR owned by the authenticated account, preserves its unrelated changes, and adds only non-conflicting missing tasks.
 - [ ] Source attribution, dates, revisions, and notes are factual.
 - [ ] Every draft file contains only the intended change.
-- [ ] The approved repository list is explicit before any later submission task.
+- [ ] The approved repository list and any approved existing PR updates are explicit before any later submission task.
 
 End with: `No Hugging Face pull requests were opened while preparing this bundle.`
 
@@ -75,4 +77,8 @@ Quote CSV fields correctly. Preserve source spelling and precision. Use addition
 - A draft path is repo-relative beneath its model directory.
 - A reviewer must be able to compare any numeric YAML value to one ledger row.
 - A model with several task values may use one YAML file containing several list entries.
+- Any existing entry for the benchmark dataset ID disqualifies the repository from a new draft, even if it covers only one task or has a different value.
+- An open PR containing the benchmark dataset ID disqualifies the repository from a new PR.
+- If exactly one matching open PR is owned and writable by the authenticated account, an `update_existing_pr` draft may add missing task entries in place when all existing values agree with the source.
+- Another author's PR, multiple matching PRs, an unwritable PR, or conflicting values disqualify in-place updates.
 - The bundle is incomplete if only drafted models are reported.

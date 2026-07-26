@@ -1,6 +1,6 @@
 ---
 name: migrate-hf-benchmark-results
-description: Convert published benchmark leaderboards from Hugging Face datasets, papers, blog posts, GitHub READMEs, tables, or similar sources into local, human-reviewable draft changes for Hugging Face model repositories using `.eval_results/*.yaml`. Use when mapping benchmark model names to exact Hub model repos, checking native benchmark task IDs, extracting scores with provenance, handling existing eval files or open PRs, and preparing a per-model PR plan. Never open, upload, or submit the model PRs; stop at a review bundle so a human can verify every target and value first.
+description: Convert published benchmark leaderboards from Hugging Face datasets, papers, blog posts, GitHub READMEs, tables, or similar sources into local, human-reviewable draft changes for Hugging Face model repositories using `.eval_results/*.yaml`. Use when mapping benchmark model names to exact Hub model repos, checking native benchmark task IDs, extracting scores with provenance, preventing duplicate benchmark submissions, handling existing eval files or open PRs, and preparing a per-model PR plan. Never open, upload, or submit the model PRs; stop at a review bundle so a human can verify every target and value first.
 ---
 
 # Migrate HF Benchmark Results
@@ -29,8 +29,10 @@ If the environment does not permit installing the CLI or skill, stop and tell th
 - Never create a Hub PR or discussion, upload a file, push a branch, or call an API with write intent.
 - Never use `hf upload --create-pr`, `hf discussions create --pull-request`, `create_commit(..., create_pr=True)`, or an equivalent operation.
 - Do not request a write token. Authentication may be used only when needed to read a source the user is authorized to access.
-- Stop after presenting the complete review bundle. State that no PRs were opened.
-- If the user later approves submission, treat that as a separate task and require an explicit list of approved repositories and their approved file contents. Do not include submission commands in this skill's deliverable.
+- Never draft or later submit a new PR for a model repo if the benchmark dataset ID already appears in any `.eval_results/*.yaml` file on its default branch or in any open PR. Treat one existing task on the default branch as an existing result for the whole benchmark.
+- An open PR authored by the currently authenticated Hugging Face account may instead be updated in place with missing task entries. Never use this exception for another author's PR, an unwritable PR, conflicting values, or a second matching open PR.
+- Stop after presenting the complete review bundle. State that no PRs were opened or updated.
+- If the user later approves submission, treat that as a separate task, require an explicit list of approved repositories, approved file contents, and any existing PRs approved for in-place updates. Repeat the duplicate and ownership checks immediately before each write. A human request to open PRs does not override the duplicate-prevention rule. Do not include submission commands in this skill's deliverable.
 
 ## 1. Establish the benchmark contract
 
@@ -91,15 +93,20 @@ For each exact repo, inspect the current repository files and open PRs before dr
 hf models info OWNER/MODEL --expand siblings,sha --format json
 hf discussions list OWNER/MODEL --kind pull_request --status open --format json
 hf discussions diff OWNER/MODEL PR_NUMBER --type model
+hf auth whoami --format json
 ```
 
-Fetch relevant existing `.eval_results/*.yaml` files read-only. Determine whether the proposed `(dataset.id, task_id)` entries are absent, already identical, conflicting, or present in an open PR.
+Fetch every existing `.eval_results/*.yaml` file read-only and search parsed entries for the exact benchmark `dataset.id`; do not rely on filenames or the `eval-results` tag. Inspect the diff of every open PR rather than relying only on its title.
 
-- Preserve unrelated existing entries and formatting where practical.
-- Prefer editing the benchmark's existing eval-results file over creating a duplicate file.
-- Mark identical results `already_present` and do not draft a no-op.
-- Mark conflicting values or duplicate open-PR work `needs_review`; show both versions and do not overwrite silently.
-- Record the model repo revision inspected so reviewers can detect staleness.
+- If the benchmark dataset ID appears anywhere on the default branch, mark the repo `already_present`, link the existing file, and create no draft for that repo.
+- If exactly one open PR contains the benchmark dataset ID and its author matches the account reported by `hf auth whoami`, compare its current entries with the source. If all existing values agree and only task entries are missing, mark the repo `update_existing_pr`, link the PR, and draft the complete intended file based on the PR's latest diff. If it already contains every intended entry, mark it `already_in_own_open_pr` and create no draft.
+- If the matching open PR belongs to another account, ownership cannot be confirmed, the PR cannot be updated by the authenticated account, or more than one matching PR exists, mark the repo `duplicate_open_pr`, link every matching PR, and create no draft.
+- If an owned open PR contains conflicting values, mark the repo `needs_review`; show both versions and do not overwrite silently.
+- Never open a second PR when `update_existing_pr` applies. Preserve unrelated changes already present in the owned PR and add only the approved missing task entries.
+- If any file or open-PR diff cannot be inspected reliably, mark the repo `needs_review` and exclude it from PR candidates until the check succeeds.
+- Record the model revision, open-PR numbers and authors, authenticated account, and check time so reviewers can detect stale checks.
+
+Immediately before any separately authorized submission, repeat this complete check. For `update_existing_pr`, confirm the same authenticated account still owns and can update the same open PR, refresh its latest diff, and apply the approved full-file result to that PR rather than creating another one. If a result has reached the default branch, another matching PR has appeared, ownership or writability changed, or the PR contents now conflict, skip the update and report the new state.
 
 ## 5. Draft model-side YAML
 
@@ -132,6 +139,7 @@ Apply these rules:
 - Use `source.user` only when the attribution is known and relevant.
 - Use `notes` sparingly for material setup/variant qualifiers; do not turn it into provenance storage.
 - Use a stable lowercase filename derived from the benchmark. Avoid overwriting an unrelated existing file.
+- For `update_existing_pr`, base the draft on the latest file content in that PR and include the complete post-update file, not only the missing entries.
 
 Run the bundled read-only validator against the draft tree:
 
@@ -152,7 +160,7 @@ Follow [references/review-bundle.md](references/review-bundle.md). At minimum, c
 - `drafts/.../.eval_results/*.yaml` containing exact proposed file contents;
 - `validation.txt` containing validator output and the command used.
 
-In the final response, summarize counts for source models, exact repo matches, drafts, no-ops, conflicts, ambiguous matches, and models not on the Hub. Link every local artifact. Explicitly say: **No Hugging Face pull requests were opened.**
+In the final response, summarize counts for source models, exact repo matches, new-PR drafts, owned-PR update drafts, existing-result skips, duplicate-open-PR skips, unresolved checks, ambiguous matches, and models not on the Hub. Link every local artifact. Explicitly say: **No Hugging Face pull requests were opened or updated.**
 
 ## Quality gate
 
@@ -162,7 +170,9 @@ Do not mark the migration ready for review unless all of the following hold:
 - Every drafted value has a stable source locator.
 - Every drafted repo is an exact match to the evaluated artifact.
 - Every source model appears in the ledger, even if excluded.
-- Existing results and open PRs were checked.
+- Every `.eval_results/*.yaml` file and every open PR was checked for the benchmark dataset ID.
+- No new-PR draft targets a repo that already contains the benchmark on its default branch or in an open PR.
+- Every owned-PR update draft identifies exactly one matching open PR, confirms its author matches the authenticated account, and adds only non-conflicting missing tasks to the latest PR contents.
 - Conflicts and uncertainties remain visible rather than being resolved by assumption.
 - Draft files pass structural validation.
 - No remote write operation occurred.
